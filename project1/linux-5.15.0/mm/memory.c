@@ -39,6 +39,7 @@
  * Aug/Sep 2004 Changed to four level page tables (Andi Kleen)
  */
 
+#include "linux/syscalls.h"
 #include <linux/kernel_stat.h>
 #include <linux/mm.h>
 #include <linux/sched/mm.h>
@@ -73,6 +74,7 @@
 #include <linux/perf_event.h>
 #include <linux/ptrace.h>
 #include <linux/vmalloc.h>
+#include <linux/mm_extents.h>
 
 #include <trace/events/kmem.h>
 
@@ -85,6 +87,7 @@
 
 #include "pgalloc-track.h"
 #include "internal.h"
+
 
 #if defined(LAST_CPUPID_NOT_IN_PAGE_FLAGS) && !defined(CONFIG_COMPILE_TEST)
 #warning Unfortunate NUMA and NUMA Balancing config, growing page-frame for last_cpupid.
@@ -3881,6 +3884,7 @@ setpte:
 	/* No need to invalidate - it was non-present before */
 	update_mmu_cache(vma, vmf->address, vmf->pte);
 unlock:
+    // add_to_extents(page_to_phys(page), vmf->address);
 	pte_unmap_unlock(vmf->pte, vmf->ptl);
 	return ret;
 release:
@@ -3890,6 +3894,15 @@ oom_free_page:
 	put_page(page);
 oom:
 	return VM_FAULT_OOM;
+}
+
+SYSCALL_DEFINE2(add_to_extent,
+        phys_addr_t, paddr,
+        unsigned long, vaddr)
+{
+    pr_info("ADD_TO_EXTENT: paddr: 0x%llx, vaddr: 0x%lx\n", paddr, vaddr);
+    add_to_extents(paddr, vaddr);
+    return 0;
 }
 
 /*

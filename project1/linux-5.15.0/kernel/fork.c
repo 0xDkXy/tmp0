@@ -1478,6 +1478,14 @@ static struct mm_struct *dup_mm(struct task_struct *tsk,
 	if (mm->binfmt && !try_module_get(mm->binfmt->module))
 		goto free_pt;
 
+    // not a kernel thread, user process, init for extent
+    if (current->mm == NULL && !(current->flags & PF_KTHREAD)) {
+        mm->ex_tlb.tree = RB_ROOT;
+        mm->ex_tlb.size = 0;
+        rwlock_init(&(mm->ex_tlb.tree_lock));
+        atomic64_set(&(mm->ex_tlb.next_extent_id), 0);
+        // pr_info("INIT EXTENT TABLE FOR TGID: %d\n", current->tgid);
+    }
 	return mm;
 
 free_pt:

@@ -4,10 +4,12 @@
 PROC=`nproc`
 export CONCURRENCY_LEVEL=$PROC
 export CONCURRENCYLEVEL=$PROC
+export CC="ccache gcc"
+export CXX="ccache g++"
 
-cp /boot/config-$(uname -r) .config
+#cp /boot/config-$(uname -r) .config
 #make menuconfig
-make oldconfig
+#make oldconfig
 
 scripts/config --disable SYSTEM_TRUSTED_KEYS
 scripts/config --disable SYSTEM_REVOCATION_KEYS
@@ -15,9 +17,9 @@ scripts/config --disable SYSTEM_REVOCATION_KEYS
 touch REPORTING-BUGS
 #sudo make clean -j
 #sudo make prepare
-sudo make -j$PROC
-#sudo make modules -j$PROC
-sudo make modules_install
+make CC="ccache gcc" -j$PROC
+#make CC="ccache gcc" modules -j$PROC
+#sudo make modules_install
 sudo make install
 
 y="5.15.168"

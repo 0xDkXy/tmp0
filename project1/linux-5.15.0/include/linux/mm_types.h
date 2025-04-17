@@ -15,6 +15,7 @@
 #include <linux/page-flags-layout.h>
 #include <linux/workqueue.h>
 #include <linux/seqlock.h>
+#include <linux/mm_extents.h>
 
 #include <asm/mmu.h>
 
@@ -582,6 +583,9 @@ struct mm_struct {
 #ifdef CONFIG_IOMMU_SUPPORT
 		u32 pasid;
 #endif
+
+        struct extent_table ex_tlb;
+
 	} __randomize_layout;
 
 	/*
