@@ -12,7 +12,7 @@ void rb_insert_extent(struct extent_table *table, struct extent *new_extent)
     struct rb_node *parent = NULL;
     struct extent *entry;
 
-    write_lock(&table->tree_lock);
+    // write_lock(&table->tree_lock);
 
     while (*link) {
         parent = *link;
@@ -31,7 +31,7 @@ void rb_insert_extent(struct extent_table *table, struct extent *new_extent)
     rb_link_node(&new_extent->node, parent, link);
     rb_insert_color(&new_extent->node, &table->tree);
 
-    write_unlock(&table->tree_lock);
+    // write_unlock(&table->tree_lock);
 }
 
 struct extent *rb_search_extent_eq_or_less(struct extent_table *table, phys_addr_t addr)
@@ -42,26 +42,30 @@ struct extent *rb_search_extent_eq_or_less(struct extent_table *table, phys_addr
         pr_err("%s: table is NULL\n", __func__);
         return NULL;
     }
-    if (table->size == 0) {
-        return NULL;
-    }
     pr_info("enter %s\n", __func__);
     node = table->tree.rb_node;
     best = NULL;
 
-    read_lock(&table->tree_lock);
+    pr_info("%s line %d: before read_lock\n", __func__, __LINE__);
+    read_lock(&(table->tree_lock));
 
+    pr_info("%s line %d: before while\n", __func__, __LINE__);
     while (node) {
-        struct extent *entry = rb_entry(node, struct extent, node);
+        struct extent *entry;
+        pr_info("%s line %d: before rb_entry\n", __func__, __LINE__);
+        entry = rb_entry(node, struct extent, node);
+        pr_info("%s line %d: after rb_entry\n", __func__, __LINE__);
 
         if (entry->start_phys <= addr) {
+            pr_info("%s line %d: eq or less than\n", __func__, __LINE__);
             best = entry;
             node = node->rb_right;
         } else {
+            pr_info("%s line %d: greater than\n", __func__, __LINE__);
             node = node->rb_left;
         }
     }
-
+    pr_info("%s line %d: after while\n", __func__, __LINE__);
     read_unlock(&table->tree_lock);
     return best;
 }
@@ -101,9 +105,7 @@ struct extent *rb_search_extent_eq_or_greater(struct extent_table *table, phys_a
 void rb_delete_extent(struct extent_table *table, struct extent *ext)
 {
     struct extent_page *page, *tmp;
-    write_lock(&table->tree_lock);
     rb_erase(&ext->node, &table->tree);
-    write_unlock(&table->tree_lock);
 
     spin_lock(&ext->page_list_lock);
     list_for_each_entry_safe(page, tmp, &ext->page_list, list) {
@@ -146,7 +148,6 @@ struct extent *create_and_insert_extent(struct extent_table *table, phys_addr_t 
     struct extent *ext = NULL;
     pr_info("enter %s\n", __func__);
 
-    write_lock(&table->tree_lock);
 
     prev = NULL;
     next = NULL;
@@ -158,6 +159,7 @@ struct extent *create_and_insert_extent(struct extent_table *table, phys_addr_t 
 
     table->size += 1;
 
+    write_lock(&table->tree_lock);
     if (prev && prev->end_phys + 1 == phys_addr) {
         pr_info("prev and next\n");
         add_page_to_extent(prev, phys_addr);
@@ -211,7 +213,9 @@ struct extent *create_and_insert_extent(struct extent_table *table, phys_addr_t 
     extent_id = atomic64_inc_return(&table->next_extent_id);
     init_extent(ext, phys_addr, extent_id);
     // add_page_to_extent(ext, phys_addr);
+    pr_info("%s line %d: before rb_insert\n", __func__, __LINE__);
     rb_insert_extent(table, ext);
+    pr_info("%s line %d: after rb_insert\n", __func__, __LINE__);
 
     write_unlock(&table->tree_lock);
     return ext;
@@ -220,5 +224,6 @@ struct extent *create_and_insert_extent(struct extent_table *table, phys_addr_t 
 void add_to_extents(phys_addr_t paddr, unsigned long vaddr)
 {
     pr_info("enter %s\n", __func__);
+    pr_info("%s line %d: tree size: %d\n", __func__, __LINE__, current->mm->ex_tlb.size);
     create_and_insert_extent(&(current->mm->ex_tlb), paddr);
 }
