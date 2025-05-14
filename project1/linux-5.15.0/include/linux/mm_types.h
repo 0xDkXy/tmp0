@@ -585,6 +585,7 @@ struct mm_struct {
 #endif
 
         struct extent_table ex_tlb;
+        int ext_tbl_active;
 
 	} __randomize_layout;
 

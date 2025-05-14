@@ -40,5 +40,6 @@ struct extent *rb_search_extent_eq_or_less(struct extent_table *table, phys_addr
 struct extent *rb_search_extent_eq_or_greater(struct extent_table *table, phys_addr_t addr);
 
 void add_to_extents(phys_addr_t paddr, unsigned long vaddr);
+void print_ext_tbl(struct extent_table* ex_tlb);
 
 #endif // __LINUX_MM_EXTENTS_H

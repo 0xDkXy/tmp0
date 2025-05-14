@@ -3884,6 +3884,10 @@ setpte:
 	/* No need to invalidate - it was non-present before */
 	update_mmu_cache(vma, vmf->address, vmf->pte);
 unlock:
+    if (current->mm != NULL 
+            && current->mm->ext_tbl_active) {
+        add_to_extents(page_to_phys(page), vmf->address);
+    }
     // add_to_extents(page_to_phys(page), vmf->address);
 	pte_unmap_unlock(vmf->pte, vmf->ptl);
 	return ret;
@@ -3902,6 +3906,22 @@ SYSCALL_DEFINE2(add_to_extent,
 {
     pr_info("ADD_TO_EXTENT: paddr: 0x%llx, vaddr: 0x%lx\n", paddr, vaddr);
     add_to_extents(paddr, vaddr);
+    return 0;
+}
+
+SYSCALL_DEFINE0(enable_extent_table)
+{
+    if (!current->mm->ext_tbl_active) {
+        current->mm->ext_tbl_active = 1;
+    }
+    return 0;
+}
+
+SYSCALL_DEFINE0(print_ext_tbl)
+{
+    if (current->mm->ext_tbl_active) {
+        print_ext_tbl(&current->mm->ex_tlb);
+    }
     return 0;
 }
 

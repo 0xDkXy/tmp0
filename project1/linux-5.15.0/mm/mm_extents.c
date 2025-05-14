@@ -42,30 +42,22 @@ struct extent *rb_search_extent_eq_or_less(struct extent_table *table, phys_addr
         pr_err("%s: table is NULL\n", __func__);
         return NULL;
     }
-    pr_info("enter %s\n", __func__);
     node = table->tree.rb_node;
     best = NULL;
 
-    pr_info("%s line %d: before read_lock\n", __func__, __LINE__);
     read_lock(&(table->tree_lock));
 
-    pr_info("%s line %d: before while\n", __func__, __LINE__);
     while (node) {
         struct extent *entry;
-        pr_info("%s line %d: before rb_entry\n", __func__, __LINE__);
         entry = rb_entry(node, struct extent, node);
-        pr_info("%s line %d: after rb_entry\n", __func__, __LINE__);
 
         if (entry->start_phys <= addr) {
-            pr_info("%s line %d: eq or less than\n", __func__, __LINE__);
             best = entry;
             node = node->rb_right;
         } else {
-            pr_info("%s line %d: greater than\n", __func__, __LINE__);
             node = node->rb_left;
         }
     }
-    pr_info("%s line %d: after while\n", __func__, __LINE__);
     read_unlock(&table->tree_lock);
     return best;
 }
@@ -81,7 +73,6 @@ struct extent *rb_search_extent_eq_or_greater(struct extent_table *table, phys_a
     if (table->size == 0) {
         return NULL;
     }
-    pr_info("enter %s\n", __func__);
     node = table->tree.rb_node;
     best = NULL;
 
@@ -117,113 +108,187 @@ void rb_delete_extent(struct extent_table *table, struct extent *ext)
     kfree(ext);
 }
 
-void init_extent(struct extent *ext, phys_addr_t addr, unsigned long extent_id)
+void init_extent(struct extent *ext, phys_addr_t addr, unsigned long vaddr,
+		 unsigned long extent_id)
 {
     ext->start_phys = addr;
+    ext->start_vaddr = vaddr;
     ext->end_phys = addr + PAGE_SIZE - 1;
+    ext->end_vaddr = vaddr + PAGE_SIZE - 1;
     ext->num_pages = 1;
     ext->extent_id = extent_id;
     INIT_LIST_HEAD(&ext->page_list);
     spin_lock_init(&ext->page_list_lock);
 }
 
-void add_page_to_extent(struct extent *ext, phys_addr_t addr)
+void add_page_to_extent(struct extent *ext, phys_addr_t addr,
+			unsigned long vaddr)
 {
     struct extent_page *new_page = kzalloc(sizeof(struct extent_page), GFP_KERNEL);
     if (!new_page)
         return;
 
     new_page->phys_addr = addr;
-    spin_lock(&ext->page_list_lock);
+    new_page->vaddr = vaddr;
     list_add_tail(&new_page->list, &ext->page_list);
     ext->num_pages++;
     ext->end_phys = addr + PAGE_SIZE - 1;
-    spin_unlock(&ext->page_list_lock);
+    ext->end_vaddr = vaddr + PAGE_SIZE - 1;
 }
 
-struct extent *create_and_insert_extent(struct extent_table *table, phys_addr_t phys_addr)
+struct extent *create_and_insert_extent(struct extent_table *table,
+					phys_addr_t phys_addr,
+					unsigned long vaddr)
 {
+
     unsigned long extent_id;
     struct extent *prev, *next;
     struct extent *ext = NULL;
-    pr_info("enter %s\n", __func__);
-
+    // pr_info("enter %s\n", __func__);
 
     prev = NULL;
     next = NULL;
-    pr_info("%s before prev\n", __func__);
     prev = rb_search_extent_eq_or_less(table, phys_addr);
-    pr_info("%s before next\n", __func__);
     next = rb_search_extent_eq_or_greater(table, phys_addr);
-    pr_info("%s after next\n", __func__);
 
+    // pr_info("%s: got prev and next\n", __func__);
     table->size += 1;
 
     write_lock(&table->tree_lock);
-    if (prev && prev->end_phys + 1 == phys_addr) {
-        pr_info("prev and next\n");
-        add_page_to_extent(prev, phys_addr);
-        if (next && phys_addr + PAGE_SIZE == next->start_phys) {
+    if (prev && prev->end_phys + 1 == phys_addr &&
+            prev->end_vaddr + 1 == vaddr) {
+        // pr_info("%s: prev\n", __func__);
+
+        spin_lock(&prev->page_list_lock);
+
+        add_page_to_extent(prev, phys_addr, vaddr);
+
+        spin_unlock(&prev->page_list_lock);
+
+        if (next && phys_addr + PAGE_SIZE == next->start_phys &&
+                vaddr + PAGE_SIZE == next->start_vaddr) {
+
+            // pr_info("%s: prev and next\n", __func__);
+
             // merge next into prev
             spin_lock(&next->page_list_lock);
             spin_lock(&prev->page_list_lock);
+
             list_splice_tail_init(&next->page_list, &prev->page_list);
+
             prev->end_phys = next->end_phys;
+            prev->end_vaddr = next->end_vaddr;
             prev->num_pages += next->num_pages;
+
             spin_unlock(&prev->page_list_lock);
             spin_unlock(&next->page_list_lock);
+
             rb_delete_extent(table, next);
         }
         write_unlock(&table->tree_lock);
         return prev;
-    } else if (next && phys_addr + PAGE_SIZE == next->start_phys) {
+    } else if (next && phys_addr + PAGE_SIZE == next->start_phys &&
+            vaddr + PAGE_SIZE == next->start_vaddr) {
         // FIXME: we chagne start physical address here, which is the key
         // of rbtree, so we have to delete this node and insert a new one.
-        pr_info("only next\n");
+        // pr_info("%s: only next\n", __func__);
         ext = kzalloc(sizeof(struct extent), GFP_KERNEL);
         if (!ext) {
             write_unlock(&table->tree_lock);
             return NULL;
         }
+
         extent_id = next->extent_id;
-        init_extent(ext, phys_addr, extent_id);
+        init_extent(ext, phys_addr, vaddr, extent_id);
 
         spin_lock(&(ext->page_list_lock));
         spin_lock(&(next->page_list_lock));
 
+        add_page_to_extent(ext, phys_addr, vaddr);
+
         ext->end_phys = next->end_phys;
+        ext->end_vaddr = next->end_vaddr;
         ext->num_pages = next->num_pages + 1;
+
         list_splice_tail_init(&next->page_list, &ext->page_list);
+
         spin_unlock(&(next->page_list_lock));
         spin_unlock(&(ext->page_list_lock));
 
         rb_delete_extent(table, next);
         rb_insert_extent(table, ext);
+
         write_unlock(&table->tree_lock);
         return ext;
     }
 
+    // pr_info("%s: no prev no next\n", __func__);
+
     // create new extent
-    pr_info("no prev no next\n");
     ext = kzalloc(sizeof(struct extent), GFP_ATOMIC);
     if (!ext) {
         write_unlock(&table->tree_lock);
         return NULL;
     }
+
     extent_id = atomic64_inc_return(&table->next_extent_id);
-    init_extent(ext, phys_addr, extent_id);
-    // add_page_to_extent(ext, phys_addr);
-    pr_info("%s line %d: before rb_insert\n", __func__, __LINE__);
+    init_extent(ext, phys_addr, vaddr, extent_id);
+
+    spin_lock(&ext->page_list_lock);
+
+    add_page_to_extent(ext, phys_addr, vaddr);
+
+    spin_unlock(&ext->page_list_lock);
+
     rb_insert_extent(table, ext);
-    pr_info("%s line %d: after rb_insert\n", __func__, __LINE__);
 
     write_unlock(&table->tree_lock);
     return ext;
 }
 
+void print_ext(struct extent* _ext)
+{
+
+    struct extent_page *pos, *tmp;
+    spin_lock(&(_ext->page_list_lock));
+
+    pr_info("\nEXTID: %ld\n", _ext->extent_id);
+    list_for_each_entry_safe(pos, tmp, &_ext->page_list, list) {
+        pr_info("\tphysical addr: 0x%llx, vaddr: 0x%lx\n", pos->phys_addr, pos->vaddr);
+
+    }
+    pr_info("\n");
+
+    spin_unlock(&(_ext->page_list_lock));
+}
+
 void add_to_extents(phys_addr_t paddr, unsigned long vaddr)
 {
-    pr_info("enter %s\n", __func__);
-    pr_info("%s line %d: tree size: %d\n", __func__, __LINE__, current->mm->ex_tlb.size);
-    create_and_insert_extent(&(current->mm->ex_tlb), paddr);
+    struct extent* _ext;
+    // pr_info("enter %s\n", __func__);
+    // pr_info("%s line %d: tree size: %d\n", __func__, __LINE__, current->mm->ex_tlb.size);
+    _ext = create_and_insert_extent(&(current->mm->ex_tlb), paddr, vaddr);
+    // print_ext(_ext);
+}
+
+void print_ext_tbl(struct extent_table* ex_tlb)
+{
+    struct rb_node* node;
+    struct extent* _ext;
+    int i;
+
+    read_lock(&ex_tlb->tree_lock);
+    
+    pr_info("\n PRINT ALL NODES: NODE SIZE: %d\n", ex_tlb->size);
+
+    for(node = rb_first(&ex_tlb->tree), i = 0; node; node = rb_next(node), i++) {
+
+        pr_info("NODE %d\n", i);
+        _ext = rb_entry(node, struct extent, node);
+        print_ext(_ext);
+
+    }
+    pr_info("\n");
+
+    read_unlock(&ex_tlb->tree_lock);
 }

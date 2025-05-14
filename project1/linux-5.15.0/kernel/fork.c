@@ -1482,6 +1482,7 @@ static struct mm_struct *dup_mm(struct task_struct *tsk,
     if (current->mm == NULL && !(current->flags & PF_KTHREAD)) {
         mm->ex_tlb.tree = RB_ROOT;
         mm->ex_tlb.size = 0;
+        mm->ext_tbl_active = 0;
         rwlock_init(&(mm->ex_tlb.tree_lock));
         atomic64_set(&(mm->ex_tlb.next_extent_id), 0);
         // pr_info("INIT EXTENT TABLE FOR TGID: %d\n", current->tgid);
